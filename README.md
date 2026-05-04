@@ -25,13 +25,20 @@ Most public embedding benchmarks use English or synthetic data, neither of which
 
 ## Quick start
 
-### 1. Install client dependencies
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/atahanuz/vllm-embedding-throughput-bench-tr.git
+cd vllm-embedding-throughput-bench-tr
+```
+
+### 2. Install client dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Build the Turkish corpus (one time, ~5 min)
+### 3. Build the Turkish corpus (one time, ~5 min)
 
 ```bash
 python build_corpus.py --per-bucket 500 --out corpus.jsonl
@@ -50,7 +57,7 @@ bucket  8192: 500 samples
 bucket 16384: 500 samples
 ```
 
-### 3. Launch the vLLM server (on the GPU host)
+### 4. Launch the vLLM server (on the GPU host)
 
 ```bash
 ./serve_vllm.sh
@@ -64,7 +71,7 @@ MODEL=Qwen/Qwen3-Embedding-8B MAX_NUM_SEQS=64 ./serve_vllm.sh
 
 `Qwen3-Embedding-8B` is a decoder-style embedding model — vLLM needs `--task embed`, which the script already passes.
 
-### 4. Run the benchmark
+### 5. Run the benchmark
 
 ```bash
 python benchmark.py \
@@ -89,7 +96,7 @@ Example console output:
   -> 412.7 req/s | 105651.2 tok/s | p50 218.4ms p95 412.0ms | errors 0.0%
 ```
 
-### 5. Sweep all length buckets
+### 6. Sweep all length buckets
 
 To build a full throughput-vs-input-length picture:
 
@@ -103,7 +110,7 @@ for b in 64 256 1024 4096 8192 16384; do
 done
 ```
 
-### 6. Plot
+### 7. Plot
 
 ```bash
 python plot.py results/bucket_256/summary_*.json
