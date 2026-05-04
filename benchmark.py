@@ -183,42 +183,56 @@ async def main_async(args: argparse.Namespace) -> None:
         print(f"[corpus] {len(corpus)} samples loaded from {args.corpus}"
               + (f" (bucket={args.bucket})" if args.bucket else " (all buckets)"))
 
+    def write_summary(rows: list[dict]) -> None:
+        """Persist summary JSON + CSV. Overwrites — caller invokes after every phase
+        so a Ctrl-C only loses the in-flight phase, never completed ones."""
+        if not rows:
+            return
+        summary_json.write_text(json.dumps(rows, indent=2))
+        keys = list(rows[0].keys())
+        with summary_csv.open("w") as f:
+            f.write(",".join(keys) + "\n")
+            for s in rows:
+                f.write(",".join(str(s[k]) for k in keys) + "\n")
+
     summaries: list[dict] = []
+    interrupted = False
     with raw_path.open("w") as raw_f:
         async with httpx.AsyncClient(limits=limits, timeout=timeout, http2=False) as client:
-            # One global warmup so the first concurrency level isn't penalized.
-            print(f"[warmup] {args.warmup} requests at concurrency 8")
-            await run_phase(client, url, args.model, args.warmup, 8,
-                            args.input_tokens, seed=0, corpus=corpus)
+            try:
+                # One global warmup so the first concurrency level isn't penalized.
+                print(f"[warmup] {args.warmup} requests at concurrency 8")
+                await run_phase(client, url, args.model, args.warmup, 8,
+                                args.input_tokens, seed=0, corpus=corpus)
 
-            for c in args.concurrency:
-                # Scale total requests with concurrency so the steady-state window
-                # is long enough to be statistically meaningful.
-                n = max(args.min_requests, c * args.requests_per_conc)
-                src = f"corpus={Path(args.corpus).name}" if corpus is not None else f"synthetic~{args.input_tokens}tok"
-                print(f"[run] concurrency={c}  requests={n}  {src}")
-                results, wall = await run_phase(
-                    client, url, args.model, n, c, args.input_tokens, seed=c, corpus=corpus,
-                )
-                for r in results:
-                    raw_f.write(json.dumps(asdict(r)) + "\n")
-                s = summarize(results, wall, c)
-                print(
-                    f"  -> {s['throughput_rps']} req/s | "
-                    f"{s['throughput_input_tokens_per_s']} tok/s | "
-                    f"p50 {s['latency_ms_p50']}ms p95 {s['latency_ms_p95']}ms | "
-                    f"errors {s['error_rate']:.1%}"
-                )
-                summaries.append(s)
+                for c in args.concurrency:
+                    # Scale total requests with concurrency so the steady-state window
+                    # is long enough to be statistically meaningful.
+                    n = max(args.min_requests, c * args.requests_per_conc)
+                    src = f"corpus={Path(args.corpus).name}" if corpus is not None else f"synthetic~{args.input_tokens}tok"
+                    print(f"[run] concurrency={c}  requests={n}  {src}")
+                    results, wall = await run_phase(
+                        client, url, args.model, n, c, args.input_tokens, seed=c, corpus=corpus,
+                    )
+                    for r in results:
+                        raw_f.write(json.dumps(asdict(r)) + "\n")
+                    raw_f.flush()  # so a later Ctrl-C can't lose this phase's raw rows
+                    s = summarize(results, wall, c)
+                    print(
+                        f"  -> {s['throughput_rps']} req/s | "
+                        f"{s['throughput_input_tokens_per_s']} tok/s | "
+                        f"p50 {s['latency_ms_p50']}ms p95 {s['latency_ms_p95']}ms | "
+                        f"errors {s['error_rate']:.1%}"
+                    )
+                    summaries.append(s)
+                    write_summary(summaries)  # checkpoint after every phase
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                interrupted = True
+                print("\n[interrupted] saving partial results before exit...")
+                write_summary(summaries)
 
-    summary_json.write_text(json.dumps(summaries, indent=2))
-    # CSV
-    keys = list(summaries[0].keys())
-    with summary_csv.open("w") as f:
-        f.write(",".join(keys) + "\n")
-        for s in summaries:
-            f.write(",".join(str(s[k]) for k in keys) + "\n")
-
+    if interrupted:
+        print(f"\npartial run — {len(summaries)} of {len(args.concurrency)} concurrency levels completed")
     print(f"\nraw:     {raw_path}")
     print(f"summary: {summary_json}")
     print(f"csv:     {summary_csv}")
