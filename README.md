@@ -18,6 +18,7 @@ Most public embedding benchmarks use English or synthetic data, neither of which
 | `serve_vllm.sh` | Reference launch command for the vLLM embedding server. Run on the GPU host. |
 | `build_corpus.py` | Streams Turkish Wikipedia, groups paragraphs into articles, buckets by length, writes `corpus.jsonl`. |
 | `benchmark.py`   | Async load generator. Sweeps concurrency levels and writes per-request and aggregated results. |
+| `show_results.py` | Pretty-prints a summary JSON as a fixed-width table with peak-throughput and saturation callouts. |
 | `plot.py`        | Throughput- and latency-vs-concurrency plots from a summary JSON. |
 | `requirements.txt` | Client-side dependencies. The vLLM server has its own. |
 
@@ -110,7 +111,32 @@ for b in 64 256 1024 4096 8192 16384; do
 done
 ```
 
-### 7. Plot
+### 7. Inspect results
+
+Pretty-print the latest summary as a table (with peak-throughput and saturation callouts):
+
+```bash
+python show_results.py                    # picks the latest under results/
+python show_results.py results/summary_20260504_090852.json   # specific file
+```
+
+Example output:
+
+```
+concurrency    requests      req/s       tok/s     p50 ms     p95 ms     p99 ms   errors
+-----------  ----------  ---------  ----------  ---------  ---------  ---------  -------
+          1     200/200      58.65     12604.3       14.4       16.4       18.0     0.0%
+         10     200/200     178.76     38067.7       55.8       63.5       70.0     0.0%
+        100   2000/2000     118.92     25690.6      478.6     2842.4     4000.0     0.0%
+        500  10000/10000     184.51     39706.6     1752.6     8002.6    12000.0     0.0%   <- peak req/s
+       1000  20000/20000     147.87     31819.3     4266.2    21268.8    28000.0     0.0%
+
+  peak throughput: 184.5 req/s (39707 tok/s) at concurrency 500
+  best latency:    p50 14.4 ms (at concurrency 1)
+  saturation:      throughput drops 20% from concurrency 500 -> 1000 ...
+```
+
+### 8. Plot
 
 ```bash
 python plot.py results/bucket_256/summary_*.json
