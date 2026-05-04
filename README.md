@@ -68,7 +68,7 @@ MODEL=Qwen/Qwen3-Embedding-8B MAX_NUM_SEQS=64 ./serve_vllm.sh
 
 ```bash
 python benchmark.py \
-    --base-url http://<gpu-host>:8000 \
+    --base-url http://localhost:8000 \
     --corpus corpus.jsonl --bucket 256 \
     --concurrency 1 10 100 500 1000
 ```
@@ -96,7 +96,7 @@ To build a full throughput-vs-input-length picture:
 ```bash
 for b in 64 256 1024 4096 8192 16384; do
   python benchmark.py \
-      --base-url http://<gpu-host>:8000 \
+      --base-url http://localhost:8000 \
       --corpus corpus.jsonl --bucket $b \
       --concurrency 1 10 100 500 1000 \
       --out-dir results/bucket_$b
