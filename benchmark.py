@@ -115,19 +115,53 @@ async def run_phase(
     target_tokens: int,
     seed: int,
     corpus: Optional[list[str]] = None,
+    show_progress: bool = True,
 ) -> tuple[list[RequestResult], float]:
     """Fire n_requests with at most `concurrency` in flight. Returns (results, wall_time)."""
     rng = random.Random(seed)
     sem = asyncio.Semaphore(concurrency)
 
-    async def bound(i: int) -> RequestResult:
+    # Shared mutable state — safe under single-threaded asyncio (no real parallelism
+    # between coroutines, only suspension points).
+    state = {"done": 0, "ok": 0, "errors": 0, "last_print": 0.0}
+    width = len(str(n_requests))
+    t_phase = time.perf_counter()
+
+    def maybe_print(force: bool = False) -> None:
+        if not show_progress:
+            return
+        now = time.perf_counter()
+        if not force and now - state["last_print"] < 0.5:
+            return
+        state["last_print"] = now
+        elapsed = now - t_phase
+        rps = state["done"] / elapsed if elapsed > 0 else 0.0
+        eta = (n_requests - state["done"]) / rps if rps > 0 else 0.0
+        pct = 100.0 * state["done"] / n_requests
+        print(
+            f"\r  [{state['done']:>{width}}/{n_requests}] {pct:5.1f}%  "
+            f"{rps:7.1f} req/s  elapsed {elapsed:5.1f}s  ETA {eta:5.1f}s  "
+            f"errors {state['errors']}",
+            end="", flush=True,
+        )
+
+    async def bound(_i: int) -> RequestResult:
         async with sem:
             payload = make_payload(model, target_tokens, rng, corpus)
-            return await one_request(client, url, payload, concurrency)
+            r = await one_request(client, url, payload, concurrency)
+        state["done"] += 1
+        if r.ok:
+            state["ok"] += 1
+        else:
+            state["errors"] += 1
+        maybe_print()
+        return r
 
-    t0 = time.perf_counter()
     results = await asyncio.gather(*(bound(i) for i in range(n_requests)))
-    wall = time.perf_counter() - t0
+    wall = time.perf_counter() - t_phase
+    if show_progress:
+        maybe_print(force=True)
+        print()  # newline so the next output starts cleanly
     return results, wall
 
 
@@ -203,14 +237,16 @@ async def main_async(args: argparse.Namespace) -> None:
                 # One global warmup so the first concurrency level isn't penalized.
                 print(f"[warmup] {args.warmup} requests at concurrency 8")
                 await run_phase(client, url, args.model, args.warmup, 8,
-                                args.input_tokens, seed=0, corpus=corpus)
+                                args.input_tokens, seed=0, corpus=corpus,
+                                show_progress=False)
 
-                for c in args.concurrency:
+                total_phases = len(args.concurrency)
+                for idx, c in enumerate(args.concurrency, start=1):
                     # Scale total requests with concurrency so the steady-state window
                     # is long enough to be statistically meaningful.
                     n = max(args.min_requests, c * args.requests_per_conc)
                     src = f"corpus={Path(args.corpus).name}" if corpus is not None else f"synthetic~{args.input_tokens}tok"
-                    print(f"[run] concurrency={c}  requests={n}  {src}")
+                    print(f"[{idx}/{total_phases}] concurrency={c}  requests={n}  {src}")
                     results, wall = await run_phase(
                         client, url, args.model, n, c, args.input_tokens, seed=c, corpus=corpus,
                     )
