@@ -15,7 +15,6 @@ Most public embedding benchmarks use English or synthetic data, neither of which
 
 | File | Purpose |
 | --- | --- |
-| `serve_vllm.sh` | Reference launch command for the vLLM embedding server. Run on the GPU host. |
 | `build_corpus.py` | Streams Turkish Wikipedia, groups paragraphs into articles, buckets by length, writes `corpus.jsonl`. |
 | `benchmark.py`   | Async load generator. Sweeps concurrency levels and writes per-request and aggregated results. |
 | `show_results.py` | Pretty-prints a summary JSON as a fixed-width table with peak-throughput and saturation callouts. |
@@ -61,25 +60,26 @@ bucket 16384: 500 samples
 ### 4. Launch the vLLM server (on the GPU host)
 
 ```bash
-./serve_vllm.sh
+vllm serve Qwen/Qwen3-Embedding-8B \
+    --task embed \
+    --port 8000 \
+    --max-model-len 16384 \
+    --max-num-seqs 256 \
+    --gpu-memory-utilization 0.90
 ```
 
-Defaults: `Qwen/Qwen3-Embedding-8B`, port 8000, `max_model_len=16384`, `max_num_seqs=256`, 90% GPU memory. Override with env vars, e.g.:
-
-```bash
-MODEL=Qwen/Qwen3-Embedding-8B MAX_NUM_SEQS=64 ./serve_vllm.sh
-```
-
-`Qwen3-Embedding-8B` is a decoder-style embedding model — vLLM needs `--task embed`, which the script already passes.
+`Qwen3-Embedding-8B` is a decoder-style embedding model, so `--task embed` is required. Drop `--max-num-seqs` to ~32–64 if you plan to benchmark the 16384-token bucket — KV cache pressure scales with sequence length × concurrent sequences and you'll otherwise see preemptions.
 
 ### 5. Run the benchmark
 
 ```bash
 python benchmark.py \
     --base-url http://localhost:8000 \
-    --corpus corpus.jsonl --bucket 256 \
+    --corpus corpus.jsonl \
     --concurrency 1 10 100 500 1000
 ```
+
+This samples from all length buckets uniformly. To pin a specific input length, add `--bucket 256` (or `64`, `1024`, `4096`, `8192`, `16384`).
 
 The script will:
 
