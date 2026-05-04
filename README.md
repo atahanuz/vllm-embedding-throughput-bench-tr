@@ -1,4 +1,4 @@
-# vLLM Embedding Benchmark — Turkish
+# vLLM Embedding Throughput Benchmark — Turkish
 
 A throughput and latency benchmark for embedding models served by [vLLM](https://github.com/vllm-project/vllm), using **real Turkish Wikipedia text** as input.
 
