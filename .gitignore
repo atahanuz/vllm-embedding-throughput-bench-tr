@@ -1,0 +1,17 @@
+# Generated corpus — regenerate with `python build_corpus.py`
+corpus.jsonl
+
+# Benchmark output
+results/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.python-version
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
